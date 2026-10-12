@@ -1,0 +1,84 @@
+name: build-push
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .github/workflows/build-push.yml
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-3
+  ECR_REPOSITORY: forge/podinfo
+
+jobs:
+  build-push:
+    # Skipped until the AWS_ROLE_ARN repository variable exists.
+    if: ${{ vars.AWS_ROLE_ARN != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      # ECR tags are immutable: an existing tag is never rebuilt or pushed again.
+      - name: Check whether this commit already has an image
+        id: check
+        env:
+          TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          DIGEST=$(aws ecr batch-get-image \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$TAG" \
+            --query 'images[0].imageId.imageDigest' --output text)
+          if [ "$DIGEST" = "None" ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        if: steps.check.outputs.exists == 'false'
+        env:
+          IMAGE: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          GIT_SHA: ${{ github.sha }}
+        run: docker build --build-arg GIT_SHA="$GIT_SHA" -t "$IMAGE" .
+
+      - name: Push
+        id: push
+        if: steps.check.outputs.exists == 'false'
+        env:
+          IMAGE: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker push "$IMAGE"
+          DIGEST=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE" | cut -d@ -f2)
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        env:
+          TAG: ${{ github.sha }}
+          EXISTS: ${{ steps.check.outputs.exists }}
+          DIGEST: ${{ steps.check.outputs.digest || steps.push.outputs.digest }}
+        run: |
+          if [ "$EXISTS" = "true" ]; then
+            echo "Image for $TAG already existed; nothing built or pushed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Pushed $ECR_REPOSITORY:$TAG." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "Digest: \`$DIGEST\`" >> "$GITHUB_STEP_SUMMARY"
