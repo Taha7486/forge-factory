@@ -1,0 +1,130 @@
+name: sign-attest
+
+# Signs an image that build-push already put in ECR, and attaches a CycloneDX SBOM and a
+# vulnerability scan as signed attestations. Keyless: the signature is tied to this
+# workflow file on main through GitHub's OIDC token. The Kyverno policies in forge-gitops
+# (policies/) pin exactly this file name and branch as the signer, so do not rename it
+# and run it from main only.
+# Ported from the R1 spike workflow (r1-sign-golden.yml): same tool versions, same
+# attestation types, signing pinned to Rekor v1 (ADR-001); ECR login instead of GHCR and
+# Docker Hub.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag in forge/podinfo to sign; empty means this commit's SHA
+        type: string
+        default: ''
+      sign:
+        description: Run cosign sign (false = attestations only)
+        type: boolean
+        default: true
+      sbom:
+        description: Attest the SBOM (false = no SBOM attestation)
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-3
+  ECR_REPOSITORY: forge/podinfo
+
+jobs:
+  sign-attest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+
+      - name: Install Syft and Trivy (pinned, SHA-256 verified)
+        run: |
+          set -euo pipefail
+          curl -sSfLO https://github.com/anchore/syft/releases/download/v1.51.1/syft_1.51.1_linux_amd64.tar.gz
+          echo "8fcb33017a0dc1058298c923c436d19dfa68ae93968e0b423248542e3afb9fc3  syft_1.51.1_linux_amd64.tar.gz" | sha256sum -c -
+          tar -xzf syft_1.51.1_linux_amd64.tar.gz syft
+          curl -sSfLO https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz
+          echo "2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a  trivy_0.74.0_Linux-64bit.tar.gz" | sha256sum -c -
+          tar -xzf trivy_0.74.0_Linux-64bit.tar.gz trivy
+          sudo install syft trivy /usr/local/bin/
+          syft version
+          trivy --version
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Writes the Docker credentials that cosign, Syft and Trivy all read.
+      - name: Log in to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      # Everything below works on the digest, never on the tag.
+      - name: Find the image digest
+        id: image
+        env:
+          TAG: ${{ inputs.tag || github.sha }}
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          DIGEST=$(aws ecr batch-get-image \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$TAG" \
+            --query 'images[0].imageId.imageDigest' --output text)
+          if [ -z "$DIGEST" ] || [ "$DIGEST" = "None" ]; then
+            echo "::error::No image tagged $TAG in $ECR_REPOSITORY. Run build-push first."
+            exit 1
+          fi
+          echo "ref=$REGISTRY/$ECR_REPOSITORY@$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "tag: $TAG"
+          echo "digest: $DIGEST"
+
+      - name: Make the SBOM and the vulnerability scan
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          syft "$REF" -o cyclonedx-json=sbom.cdx.json
+          trivy image --format cosign-vuln --output vuln.json "$REF"
+
+      # Sequential on purpose (the tag-schema fallback index is read-modify-write).
+      # --signing-config pins signing to Rekor v1 only (ADR-001).
+      - name: Sign and attest
+        env:
+          REF: ${{ steps.image.outputs.ref }}
+          DO_SIGN: ${{ inputs.sign }}
+          DO_SBOM: ${{ inputs.sbom }}
+        run: |
+          set -euo pipefail
+          SC=(--signing-config signing-config/rekor-v1-only.json)
+          if [ "$DO_SIGN" = "true" ]; then
+            cosign sign --yes "${SC[@]}" "$REF"
+          fi
+          if [ "$DO_SBOM" = "true" ]; then
+            cosign attest --yes "${SC[@]}" --type cyclonedx --predicate sbom.cdx.json "$REF"
+          fi
+          cosign attest --yes "${SC[@]}" --type vuln --predicate vuln.json "$REF"
+
+      - name: Summary
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+          DO_SIGN: ${{ inputs.sign }}
+          DO_SBOM: ${{ inputs.sbom }}
+        run: |
+          {
+            echo "## Signed and attested"
+            echo "Digest: \`$DIGEST\`"
+            echo "- Signed: $DO_SIGN. SBOM attested: $DO_SBOM. Vulnerability scan attested: true."
+            echo "- SBOM components: $(jq '.components | length' sbom.cdx.json)"
+            echo "- scanFinishedOn: $(jq -r '.metadata.scanFinishedOn' vuln.json)"
+            echo "- Vulnerabilities by severity:"
+            jq -r '[.scanner.result.Results[]?.Vulnerabilities[]?.Severity] | group_by(.) | map("  - \(.[0]): \(length)") | .[]' vuln.json
+          } >> "$GITHUB_STEP_SUMMARY"
