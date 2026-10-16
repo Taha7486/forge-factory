@@ -5,6 +5,8 @@ name: sign-attest
 # workflow file on main through GitHub's OIDC token. The Kyverno policies in forge-gitops
 # (policies/) pin exactly this file name and branch as the signer, so do not rename it
 # and run it from main only.
+# Between the scan and the signing, a vulnerability gate (gate/) blocks CRITICAL and HIGH
+# findings that have no unexpired waiver.
 # Ported from the R1 spike workflow (r1-sign-golden.yml): same tool versions, same
 # attestation types, signing pinned to Rekor v1 (ADR-001); ECR login instead of GHCR and
 # Docker Hub.
@@ -94,6 +96,14 @@ jobs:
           set -euo pipefail
           syft "$REF" -o cyclonedx-json=sbom.cdx.json
           trivy image --format cosign-vuln --output vuln.json "$REF"
+
+      # Fails the job, so nothing below runs and the image stays unsigned, if a CRITICAL or
+      # HIGH finding has no valid waiver. Rules and exit codes: gate/vuln_gate.py. Waivers:
+      # gate/waivers.json. It reads the same vuln.json that is attested, so waived findings
+      # stay visible in the attestation. No date override here: the script refuses --today
+      # on a runner.
+      - name: Vulnerability gate
+        run: python3 -I gate/vuln_gate.py --vuln vuln.json --waivers gate/waivers.json --summary "$GITHUB_STEP_SUMMARY"
 
       # Sequential on purpose (the tag-schema fallback index is read-modify-write).
       # --signing-config pins signing to Rekor v1 only (ADR-001).

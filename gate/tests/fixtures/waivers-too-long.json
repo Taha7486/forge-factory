@@ -1,0 +1,12 @@
+{
+  "waivers": [
+    {
+      "id": "CVE-2099-0001",
+      "package": "libfoo",
+      "justification": "Reachable only through a code path this image never runs; upgrade planned.",
+      "owner": "taha",
+      "created": "2026-10-01",
+      "expires": "2027-04-01"
+    }
+  ]
+}

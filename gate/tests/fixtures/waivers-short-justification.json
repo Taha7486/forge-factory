@@ -1,0 +1,12 @@
+{
+  "waivers": [
+    {
+      "id": "CVE-2099-0001",
+      "package": "libfoo",
+      "justification": "later",
+      "owner": "taha",
+      "created": "2026-10-01",
+      "expires": "2026-12-01"
+    }
+  ]
+}
