@@ -1,0 +1,24 @@
+{
+  "name": "x",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "x",
+      "dependencies": {
+        "a": "1.0.0"
+      }
+    },
+    "node_modules/a": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/a/-/a-1.0.0.tgz",
+      "integrity": "sha512-AAAA"
+    },
+    "node_modules/b": {
+      "version": "2.0.0",
+      "resolved": "https://registry.npmjs.org/b/-/b-2.0.0.tgz",
+      "integrity": "sha512-BBBB",
+      "dev": true
+    }
+  }
+}

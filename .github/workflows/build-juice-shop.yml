@@ -1,0 +1,98 @@
+name: build-juice-shop
+
+# Rebuilds OWASP Juice Shop from the pinned upstream commit (juice-shop/source.env) with the
+# hardened Dockerfile and the committed lockfiles, and pushes it to forge/juice-shop in ECR. It
+# does not sign anything: sign-attest.yml does that (input repository = forge/juice-shop), and its
+# vulnerability gate will refuse the image until gate/waivers.json covers the findings.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - juice-shop/**
+      - .github/workflows/build-juice-shop.yml
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-3
+  ECR_REPOSITORY: forge/juice-shop
+
+jobs:
+  build-push:
+    # Skipped until the AWS_ROLE_ARN repository variable exists.
+    if: ${{ vars.AWS_ROLE_ARN != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Cheap checks first: the lockfile rules and the build script's own tests (no network).
+      - name: Test the lockfile checker and build.sh
+        run: |
+          juice-shop/tests/run_tests.sh
+          juice-shop/tests/build_sh_tests.sh
+
+      - name: Check the committed lockfiles
+        run: python3 -I juice-shop/check-locks.py juice-shop/locks/package-lock.json juice-shop/locks/frontend-package-lock.json
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      # ECR tags are immutable: an existing tag is never rebuilt or pushed again.
+      - name: Check whether this commit already has an image
+        id: check
+        env:
+          TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          DIGEST=$(aws ecr batch-get-image \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$TAG" \
+            --query 'images[0].imageId.imageDigest' --output text)
+          if [ "$DIGEST" = "None" ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        if: steps.check.outputs.exists == 'false'
+        env:
+          IMAGE: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          FACTORY_SHA: ${{ github.sha }}
+        run: juice-shop/build.sh "$IMAGE" "$FACTORY_SHA"
+
+      - name: Push
+        id: push
+        if: steps.check.outputs.exists == 'false'
+        env:
+          IMAGE: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker push "$IMAGE"
+          DIGEST=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE" | cut -d@ -f2)
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        env:
+          TAG: ${{ github.sha }}
+          EXISTS: ${{ steps.check.outputs.exists }}
+          DIGEST: ${{ steps.check.outputs.digest || steps.push.outputs.digest }}
+        run: |
+          if [ "$EXISTS" = "true" ]; then
+            echo "Image for $TAG already existed; nothing built or pushed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Pushed $ECR_REPOSITORY:$TAG." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "Digest: \`$DIGEST\`" >> "$GITHUB_STEP_SUMMARY"

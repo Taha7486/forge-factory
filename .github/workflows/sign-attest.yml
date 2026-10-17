@@ -1,6 +1,6 @@
 name: sign-attest
 
-# Signs an image that build-push already put in ECR, and attaches a CycloneDX SBOM and a
+# Signs an image that a build workflow (build-push or build-juice-shop) already put in ECR, and attaches a CycloneDX SBOM and a
 # vulnerability scan as signed attestations. Keyless: the signature is tied to this
 # workflow file on main through GitHub's OIDC token. The Kyverno policies in forge-gitops
 # (policies/) pin exactly this file name and branch as the signer, so do not rename it
@@ -13,8 +13,15 @@ name: sign-attest
 on:
   workflow_dispatch:
     inputs:
+      repository:
+        description: ECR repository of the image to sign
+        type: choice
+        options:
+          - forge/podinfo
+          - forge/juice-shop
+        default: forge/podinfo
       tag:
-        description: Tag in forge/podinfo to sign; empty means this commit's SHA
+        description: Tag in that repository to sign; empty means this commit's SHA
         type: string
         default: ''
       sign:
@@ -32,7 +39,7 @@ permissions:
 
 env:
   AWS_REGION: eu-west-3
-  ECR_REPOSITORY: forge/podinfo
+  ECR_REPOSITORY: ${{ inputs.repository || 'forge/podinfo' }}
 
 jobs:
   sign-attest:
@@ -81,7 +88,7 @@ jobs:
             --image-ids imageTag="$TAG" \
             --query 'images[0].imageId.imageDigest' --output text)
           if [ -z "$DIGEST" ] || [ "$DIGEST" = "None" ]; then
-            echo "::error::No image tagged $TAG in $ECR_REPOSITORY. Run build-push first."
+            echo "::error::No image tagged $TAG in $ECR_REPOSITORY. Run the build workflow for this repository first."
             exit 1
           fi
           echo "ref=$REGISTRY/$ECR_REPOSITORY@$DIGEST" >> "$GITHUB_OUTPUT"
