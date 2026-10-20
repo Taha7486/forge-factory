@@ -96,7 +96,7 @@ Tests: `gate/tests/run_tests.sh` (30 cases, made-up `CVE-2099-*` ids, the date p
 
 Checked locally on the real report: the empty file blocks 38 findings; the 35 waivers pass; on 2027-01-14 it passes with an expiry warning per waiver; on 2027-01-15 all 38 block again ("waiver expired"); removing any one waiver blocks exactly that pair (35 of 35 cases). Not checked: a CI run on our own build from ECR. The 14 packages that differ by a patch version between upstream's image and our lock could change the list; a pair that is missing blocks the first run visibly, a surplus waiver only warns. Renew or drop the waivers before 2027-01-15, and redo them against a fresh scan whenever `juice-shop/locks/` changes.
 
-Not enforced by this repo: that waivers change only through a pull request. The `protect-main` ruleset blocks deleting `main` and force pushes, but still allows a direct push, which could add a waiver. Requiring a pull request is a repository setting.
+Waivers change only through a pull request. The `protect-main` ruleset (updated 2026-10-16, verified through the public API) blocks direct pushes, force pushes and deletions of `main`.
 
 ## Setup
 
