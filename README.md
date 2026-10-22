@@ -35,7 +35,7 @@ Two things that surprised the first attempts: `npm prune --omit=dev` hung for 24
 - `juice-shop/`: the Juice Shop build (above).
 - `.github/workflows/build-juice-shop.yml`: builds and pushes `forge/juice-shop`, on pushes to `main` that change `juice-shop/` and on manual dispatch.
 - `.github/workflows/build-push.yml`: the build workflow. It runs on pushes to `main` that change the Dockerfile or the workflow, and on manual dispatch.
-- `.github/workflows/sign-attest.yml`: the signing workflow, for forge/podinfo or forge/juice-shop (input `repository`). Manual dispatch only, and only from `main`: the cluster's admission policies accept exactly this file name on that branch as the signer, so do not rename it.
+- `.github/workflows/sign-attest.yml`: the signing workflow, for forge/podinfo or forge/juice-shop. It runs by itself when `build-push` or `build-juice-shop` finishes successfully on `main` (`workflow_run`): it signs that commit's image, skips a digest that already carries its signature, and a failed vulnerability gate leaves the image unsigned, so the cluster refuses it. It can also be started by hand (inputs `repository`, `tag`, `sign`, `sbom`) for experiments. It runs from `main` only: the cluster's admission policies accept exactly this file name on that branch as the signer, so do not rename it. The automatic path is checked with `actionlint` and stand-in tests of its shell steps only; a real run needs the AWS account.
 - `gate/`: the vulnerability gate. `vuln_gate.py` is the gate (Python standard library only), `waivers.json` the waiver list (35 waivers, all for Juice Shop), `tests/` the fixtures and `run_tests.sh`.
 - `signing-config/rekor-v1-only.json`: pins signing to one transparency log (Rekor v1), as decided in the R1 spike.
 
