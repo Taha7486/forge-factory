@@ -2,6 +2,9 @@
 # Tests for vuln_gate.py. Needs python3 only. Every case pins --today, so the result does
 # not depend on the real date. The fixtures use made-up CVE-2099-* ids.
 set -u
+# On a GitHub runner GITHUB_ACTIONS=true, and the gate then refuses --today. Every case below
+# pins --today, so run them as on a laptop; the one case that needs the variable sets it itself.
+unset GITHUB_ACTIONS
 cd "$(dirname "$0")"
 GATE="python3 -I ../vuln_gate.py"
 F=fixtures
