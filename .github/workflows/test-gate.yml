@@ -1,0 +1,26 @@
+name: test-gate
+
+# Runs the unit tests of the vulnerability gate (gate/tests/run_tests.sh) when the gate, its
+# waivers or its tests change on main. No cloud access: no secrets, no AWS, read-only token.
+# Same triggers as the other workflows on purpose (push to main and manual dispatch, no
+# pull_request), so a pull request cannot run workflow code with this repository's settings.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - gate/**
+      - .github/workflows/test-gate.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Test the vulnerability gate
+        run: gate/tests/run_tests.sh
