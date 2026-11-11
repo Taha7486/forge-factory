@@ -47,16 +47,16 @@ t "missing owner fails closed"                          2 "missing owner" $V --w
 t "empty owner fails closed"                            2 "owner is empty" $V --waivers $F/waivers-empty-owner.json
 t "waiver longer than 90 days fails closed"             2 "the limit is 90 days" $V --waivers $F/waivers-too-long.json
 t "unknown field fails closed"                          2 "unknown field ticket" $V --waivers $F/waivers-unknown-field.json
-t "duplicate waiver fails closed"                       2 "duplicate" $V --waivers $F/waivers-duplicate.json
+t "duplicate waiver fails closed"                       2 "duplicate of an earlier waiver" $V --waivers $F/waivers-duplicate.json
 t "short justification fails closed"                    2 "shorter than 20" $V --waivers $F/waivers-short-justification.json
 t "wrong date format fails closed"                      2 "YYYY-MM-DD" $V --waivers $F/waivers-bad-date-format.json
 t "impossible date fails closed"                        2 "not a real date" $V --waivers $F/waivers-impossible-date.json
 t "waiver created in the future fails closed"           2 "is in the future" $V --waivers $F/waivers-created-in-future.json
 t "expires before created fails closed"                 2 "expires must be after created" $V --waivers $F/waivers-expires-before-created.json
 t "wrong file shape fails closed"                       2 "exactly one key" $V --waivers $F/waivers-wrong-shape.json
-t "malformed JSON fails closed"                         2 "cannot read waiver file" $V --waivers $F/waivers-malformed.json
+t "malformed JSON fails closed"                         2 "Expecting value" $V --waivers $F/waivers-malformed.json
 t "missing waiver file fails closed"                    2 "cannot read waiver file" $V --waivers $F/does-not-exist.json
-t "not a Trivy report fails closed"                     2 "not a Trivy cosign-vuln report" --vuln $F/vuln-not-trivy.json --today $TODAY --waivers $F/waivers-empty.json
+t "not a Trivy report fails closed"                     2 "not a Trivy cosign-vuln report (KeyError" --vuln $F/vuln-not-trivy.json --today $TODAY --waivers $F/waivers-empty.json
 t "bad --today fails closed"                            2 "--today" --vuln $F/vuln-findings.json --today 2026-02-30 --waivers $F/waivers-empty.json
 
 # --today must not work in GitHub Actions, or a workflow could pretend it is still last month.

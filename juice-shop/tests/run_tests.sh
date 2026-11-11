@@ -36,7 +36,7 @@ t "missing integrity refused"         1 "integrity is not sha512" $F/no-integrit
 t "sha1 only refused"                 1 "sha1-CCCC" $F/sha1-only.json
 t "lockfileVersion 1 is bad input"    2 "lockfileVersion must be 2 or 3" $F/v1.json
 t "no packages is bad input"          2 "no \"packages\" section" $F/empty.json
-t "not json is bad input"             2 "cannot read" $F/not-json.json
+t "not json is bad input"             2 "Expecting property name" $F/not-json.json
 t "missing file is bad input"         2 "cannot read" $F/does-not-exist.json
 t "no arguments is bad input"         2 "usage" 
 t "one bad file fails the run"        1 "problems" $F/good.json $F/git-url.json
