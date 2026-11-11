@@ -68,7 +68,7 @@ jobs:
         github.event.workflow_run.head_repository.full_name == github.repository &&
         vars.AWS_ROLE_ARN != ''
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # A workflow_run job checks out the head of main, not the commit that was built, so
       # the tag comes from the triggering run here and never from github.sha.

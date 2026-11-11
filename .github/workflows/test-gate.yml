@@ -17,10 +17,23 @@ permissions:
 
 jobs:
   test-gate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The job summary shows the result line and every case, so the run page explains itself.
+      # The script's exit code is kept and returned at the end: a failing case still fails the job.
       - name: Test the vulnerability gate
-        run: gate/tests/run_tests.sh
+        run: |
+          status=0
+          gate/tests/run_tests.sh > test-output.txt 2>&1 || status=$?
+          cat test-output.txt
+          {
+            echo "## Vulnerability gate tests: $(tail -n 1 test-output.txt)"
+            echo
+            echo '```'
+            cat test-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
